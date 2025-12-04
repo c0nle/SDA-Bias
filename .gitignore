@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# Diffusers / HF models (gigabytes)
+models/
+cache/
+**/snapshots/
+**/model.safetensors
+**/diffusion_pytorch_model.safetensors
+
+# HuggingFace caches
+huggingface/
+~/.cache/huggingface/
+~/.cache/
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Mac OS
+.DS_Store
+
+# VS Code
+.vscode/

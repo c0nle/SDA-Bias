@@ -1,24 +1,32 @@
+# main.py
 import os
 import torch
 from diffusers import DiffusionPipeline
 from huggingface_hub import login
 from contextlib import nullcontext
 
-# === Hugging Face Token aus Environment lesen ===
+# ==== Hugging Face Token aus Environment ====
 HF_TOKEN = os.environ.get("HF_TOKEN")
 if HF_TOKEN is None:
-    raise RuntimeError("Please set the HF_TOKEN environment variable with your Hugging Face access token.")
+    raise RuntimeError(
+        "HF_TOKEN is not set. Submit the job with:\n"
+        "  sbatch --export=HF_TOKEN=hf_xxx run_roentgen.sh"
+    )
 
-# Einmalig bei Jobstart einloggen
+# einmalig pro Job HF-Login
 login(HF_TOKEN)
 
-# === Device auswählen (GPU, sonst CPU) ===
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-dtype = torch.float16 if device.type == "cuda" else torch.float32
+# ==== Device auswählen (GPU auf dem Cluster) ====
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+    dtype = torch.float16
+else:
+    device = torch.device("cpu")
+    dtype = torch.float32
 
-print(f"Using device: {device}, dtype: {dtype}")
+print(f"Using device: {device}, dtype: {dtype}", flush=True)
 
-# === RoentGen-v2 Modell laden ===
+# ==== RoentGen-v2 Modell laden ====
 pipe = DiffusionPipeline.from_pretrained(
     "stanfordmimi/RoentGen-v2",
     torch_dtype=dtype,
@@ -26,23 +34,23 @@ pipe = DiffusionPipeline.from_pretrained(
 )
 pipe.to(device)
 
-# === Bild generieren ===
+# ==== Bild generieren ====
 prompt = "50 year old female. Normal chest radiograph."
 
 if device.type == "cuda":
-    autocast_ctx = torch.autocast("cuda", dtype=dtype)
+    ctx = torch.autocast("cuda", dtype=dtype)
 else:
-    autocast_ctx = nullcontext()
+    ctx = nullcontext()
 
-with autocast_ctx:
+with ctx:
     result = pipe(prompt)
 
 image = result.images[0]
 
-# === Output speichern ===
+# ==== Output speichern ====
 outdir = "outputs"
 os.makedirs(outdir, exist_ok=True)
 outfile = os.path.join(outdir, "xray_50yo_female_normal.png")
 image.save(outfile)
 
-print(f"Done! Saved image to: {outfile}")
+print(f"Done! Saved image to: {outfile}", flush=True)
