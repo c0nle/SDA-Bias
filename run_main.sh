@@ -1,37 +1,53 @@
-#!/usr/local_rwth/bin/zsh
-#SBATCH --account=rwth1954
-#SBATCH --cpus-per-task=24
-#SBATCH --mem-per-cpu=4G
-#SBATCH --partition=c23g
+#!/usr/bin/env bash
+#SBATCH --job-name=roentgen_arr
+#SBATCH --output=logs/%x_%A_%a.out
+#SBATCH --error=logs/%x_%A_%a.err
+#SBATCH --time=04:00:00
 #SBATCH --gres=gpu:1
-#SBATCH --time=00:30:00          # 30 Minuten z.B.
-#SBATCH --job-name=roentgen
-#SBATCH --output=logs/%x-%j.out  # Log-Dateien in logs/
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=24G
+#SBATCH --array=0-9
 
-### Module laden
-module load GCCcore/.13.3.0
-module load CUDA/12.8.0
-module load Python/3.12.3
+set -euo pipefail
 
-### In Projektordner wechseln
-cd /rwthfs/rz/cluster/home/rwth1954/SDA-Bias
+echo "=== Array task ${SLURM_ARRAY_TASK_ID} started on $(hostname) at $(date) ==="
 
-# virtuelle Umgebung aktivieren (muss vorher angelegt worden sein)
-source .venv/bin/activate
-
-echo "Job startet auf Host $(hostname)"
-date
-
-# Prüfen, ob HF_TOKEN gesetzt ist
-if [ -z "$HF_TOKEN" ]; then
-  echo "ERROR: HF_TOKEN ist nicht gesetzt."
-  echo "Bitte Job so abschicken:"
-  echo "  sbatch --export=HF_TOKEN=hf_DEIN_TOKEN_HIER run_roentgen.sh"
+if [[ -z "${HF_TOKEN:-}" ]]; then
+  echo "ERROR: HF_TOKEN is not set."
+  echo "Submit with: sbatch --export=HF_TOKEN=hf_xxx run_roentgen_array.sh"
   exit 1
 fi
 
-# Python-Skript ausführen
-python main.py
+mkdir -p logs outputs
 
-date
-echo "Job beendet."
+# --- Environment (anpassen) ---
+# source ~/.bashrc
+# conda activate roentgen
+# oder: source /path/to/venv/bin/activate
+
+python -V
+nvidia-smi || true
+
+# --- Chunking Parameter ---
+# Jeder Array-Task macht CHUNK_SIZE Bilder (genauer: Prompts) ab offset
+CHUNK_SIZE=50
+OFFSET=$((SLURM_ARRAY_TASK_ID * CHUNK_SIZE))
+
+OUTDIR="outputs/arr_${SLURM_ARRAY_JOB_ID}/task_${SLURM_ARRAY_TASK_ID}"
+mkdir -p "${OUTDIR}"
+
+python main.py \
+  --outdir "${OUTDIR}" \
+  --ages "20,50,80" \
+  --sexes "female,male" \
+  --races "White,Black,Asian,Hispanic" \
+  --finding "Normal chest radiograph." \
+  --num_images_per_prompt 1 \
+  --num_inference_steps 30 \
+  --guidance_scale 3.5 \
+  --batch_size 1 \
+  --offset "${OFFSET}" \
+  --limit "${CHUNK_SIZE}" \
+  --write_metadata
+
+echo "=== Array task ${SLURM_ARRAY_TASK_ID} finished at $(date) ==="
